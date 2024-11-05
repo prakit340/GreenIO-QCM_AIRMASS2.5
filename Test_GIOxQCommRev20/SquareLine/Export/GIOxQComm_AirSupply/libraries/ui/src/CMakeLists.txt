@@ -1,0 +1,8 @@
+SET(SOURCES ui_Screen1.c
+    ui.c
+    ui_comp_hook.c
+    ui_helpers.c
+    ui_img_ancestry_6927683_png.c
+    ui_img_wifi_2803371_png.c)
+
+add_library(ui ${SOURCES})
