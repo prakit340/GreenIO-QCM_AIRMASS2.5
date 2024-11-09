@@ -171,7 +171,7 @@ TinyGsmClient base_client(modem, 1);
 SSLClient secure_layer(&base_client);
 HttpClient GSMclient = HttpClient(secure_layer, serverOTA, port);
 
-String host2 = "";
+String host = "";
 #define FORCE_USE_HOTSPOT 0
 
 #define CF_OL24 &Orbitron_Light_24
@@ -191,9 +191,9 @@ String host2 = "";
 unsigned BMEstatus;
 unsigned SGPstatus;
 
-float temp(NAN), hum(NAN), pres(NAN), altitude(NAN);
+float temp(NAN), humi(NAN), pres(NAN), altitude(NAN);
 int TempOffset = 0;
-int HumOffset1 = 0;
+int HumiOffset = 0;
 int pm01Offset = 0;
 int pm25Offset = 0;
 int pm10Offset = 0;
@@ -223,14 +223,12 @@ bool connectWifi = false;
 String json = "";
 
 /// UI handles
-uint16_t wifi_ssid_text, wifi_pass_text;
 uint16_t nameLabel, idLabel, cuationlabel, firmwarelabel, mainSwitcher, mainSlider, mainText, settingZNumber, resultButton, mainTime, downloadButton, selectDownload, logStatus;
-//  uint16_t styleButton, styleLabel, styleSwitcher, styleSlider, styleButton2, styleLabel2, styleSlider2;
-uint16_t tempText, humText, humText2, saveConfigButton, interval, emailText1;
+uint16_t tempText, humiText, saveConfigButton, interval, emailText;
 uint16_t pm01Text, pm25Text, pm10Text, pn03Text, pn05Text, pn10Text, pn25Text, pn50Text, pn100Text, lineText, eCO2Text, TVOCText;
 uint16_t bmeLog, wifiLog, teleLog;
 
-String email1 = "";
+String email = "";
 String lineID = "";
 
 String imsi = "";
@@ -417,14 +415,14 @@ void printBME280Data()
 {
   Serial.println("----- Read BME280 ------");
   temp = bme.readTemperature() + (TempOffset); // compensate
-  hum = bme.readHumidity() + (HumOffset1);
+  humi = bme.readHumidity() + (HumiOffset);
   pres = bme.readPressure() / 100.0F;
   altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
   Serial.print("Temp: ");
   Serial.print(temp);
   Serial.println(" °c");
   Serial.print("Humi: ");
-  Serial.print(hum);
+  Serial.print(humi);
   Serial.println(" %");
   Serial.print("Pressure: ");
   Serial.print(pres);
@@ -443,26 +441,22 @@ void setUpUI()
   // Make sliders continually report their position as they are being dragged.
   ESPUI.sliderContinuous = true;
 
-  // This GUI is going to be a tabbed GUI, so we are adding most controls using ESPUI.addControl
-  // which allows us to set a parent control. If we didn't need tabs we could use the simpler add
-  // functions like:
-  //     ESPUI.button()
-  //     ESPUI.label()
-
   /*
-     Tab: Basic Controls
-     This tab contains all the basic ESPUI controls, and shows how to read and update them at runtime.
+     Tab: Home
     -----------------------------------------------------------------------------------------------------------*/
   auto maintab = ESPUI.addControl(Tab, "", "Home");
-  nameLabel = ESPUI.addControl(Label, "Device Name", "AIRMASS 2.5 Inspector", Emerald, maintab);
+  nameLabel = ESPUI.addControl(Label, "Device Name", ProjectName, Emerald, maintab);
   idLabel = ESPUI.addControl(Label, "Device ID", String(deviceToken), Emerald, maintab);
   firmwarelabel = ESPUI.addControl(Label, "Firmware", String(FirmwareVer), Emerald, maintab);
 
+   /*
+     Tab: Setting
+    -----------------------------------------------------------------------------------------------------------*/
   auto settingTab = ESPUI.addControl(Tab, "", "Setting");
   cuationlabel = ESPUI.addControl(Label, "Cuation", "Offset will be divided by 100 after saving.", Emerald, settingTab);
   ESPUI.addControl(Separator, "Offset Configuration", "", None, settingTab);
   tempText = ESPUI.addControl(Number, "Temperature", String(TempOffset), Emerald, settingTab, enterDetailsCallback);
-  humText = ESPUI.addControl(Number, "Humidity", String(HumOffset1), Emerald, settingTab, enterDetailsCallback);
+  humiText = ESPUI.addControl(Number, "Humidity", String(HumiOffset), Emerald, settingTab, enterDetailsCallback);
   pm01Text = ESPUI.addControl(Number, "PM1.0", String(pm01Offset), Emerald, settingTab, enterDetailsCallback);
   pm25Text = ESPUI.addControl(Number, "PM2.5", String(pm25Offset), Emerald, settingTab, enterDetailsCallback);
   pm10Text = ESPUI.addControl(Number, "PM10", String(pm10Offset), Emerald, settingTab, enterDetailsCallback);
@@ -473,42 +467,25 @@ void setUpUI()
   pn25Text = ESPUI.addControl(Number, "2.5 micrometer", String(pn25Offset), Emerald, settingTab, enterDetailsCallback);
   pn50Text = ESPUI.addControl(Number, "5.0 micrometer", String(pn50Offset), Emerald, settingTab, enterDetailsCallback);
   pn100Text = ESPUI.addControl(Number, "10 micrometer", String(pn100Offset), Emerald, settingTab, enterDetailsCallback);
-  eCO2Text = ESPUI.addControl(Number, "Carbon dioxide (CO2)", String(eCO2Offset), Emerald, settingTab, enterDetailsCallback);
+  eCO2Text = ESPUI.addControl(Number, "Carbon dioxide (eCO2)", String(eCO2Offset), Emerald, settingTab, enterDetailsCallback);
   TVOCText = ESPUI.addControl(Number, "Volatile organic Compounds", String(TVOCOffset), Emerald, settingTab, enterDetailsCallback);
-
   ESPUI.addControl(Separator, "Interval Configuration", "", None, settingTab);
   interval = ESPUI.addControl(Number, "Interval (second)", String(periodSendTelemetry), Emerald, settingTab, enterDetailsCallback);
 
-  /*
-  ESPUI.addControl(Separator, "", "", None, settingTab);
-  ESPUI.addControl(Button, "Save", "SAVE", Peterriver, settingTab, enterDetailsCallback);
-  */
-
   ESPUI.addControl(Separator, "Email Registry", "", None, settingTab);
-
-  /**/
-  emailText1 = ESPUI.addControl(Text, "Email User 1", "", Emerald, settingTab, enterDetailsCallback);
+  emailText = ESPUI.addControl(Text, "Email User", "", Emerald, settingTab, enterDetailsCallback);
   lineText = ESPUI.addControl(Text, "Line ID", "", Emerald, settingTab, enterDetailsCallback);
 
-  /*
-  emailText2 = ESPUI.addControl(Text, "Email User 2", email.email2, Emerald, settingTab, enterDetailsCallback);
-  emailText3 = ESPUI.addControl(Text, "Email User 3", email.email3, Emerald, settingTab, enterDetailsCallback);
-  emailText4 = ESPUI.addControl(Text, "Email User 4", email.email4, Emerald, settingTab, enterDetailsCallback);
-  emailText5 = ESPUI.addControl(Text, "Email User 5", email.email5, Emerald, settingTab, enterDetailsCallback);
-  /**/
-
   ESPUI.addControl(Separator, "", "", None, settingTab);
-  //  ESPUI.addControl(Button, "Refresh", "Refresh", Peterriver, settingTab, enterDetailsCallback);
   ESPUI.addControl(Button, "Save", "SAVE", Peterriver, settingTab, enterDetailsCallback);
 
   auto eventTab = ESPUI.addControl(Tab, "", "Event Log");
   ESPUI.addControl(Separator, "Error Log", "", None, eventTab);
   teleLog = ESPUI.addControl(Label, "Server Connection Status", String(mqttStatus), Alizarin, eventTab, enterDetailsCallback);
   bmeLog = ESPUI.addControl(Label, "Sensor Connection Status", String(bmeStatus), Alizarin, eventTab, enterDetailsCallback);
-  host2 = "QCM-" + deviceToken;
-  // Finally, start up the UI.
-  // This should only be called once we are connected to WiFi.
-  ESPUI.begin(host2.c_str());
+
+  host = "QCM-" + deviceToken;
+  ESPUI.begin(host.c_str());
 }
 
 void enterDetailsCallback(Control *sender, int type)
@@ -518,11 +495,11 @@ void enterDetailsCallback(Control *sender, int type)
 
   if (type == B_UP)
   {
-    Serial.println("Saving Offset to EPROM...");
+    Serial.println("Saving Offset to EEPROM...");
 
     // Fetch controls
     Control *TempOffset_ = ESPUI.getControl(tempText);
-    Control *HumOffset1_ = ESPUI.getControl(humText);
+    Control *HumiOffset_ = ESPUI.getControl(humiText);
     Control *pm01Offset_ = ESPUI.getControl(pm01Text);
     Control *pm25Offset_ = ESPUI.getControl(pm25Text);
     Control *pm10Offset_ = ESPUI.getControl(pm10Text);
@@ -535,12 +512,12 @@ void enterDetailsCallback(Control *sender, int type)
     Control *eCO2Offset_ = ESPUI.getControl(eCO2Text);
     Control *TVOCOffset_ = ESPUI.getControl(TVOCText);
     Control *periodSendTelemetry_ = ESPUI.getControl(interval);
-    Control *email1_ = ESPUI.getControl(emailText1);
+    Control *email_ = ESPUI.getControl(emailText);
     Control *lineID_ = ESPUI.getControl(lineText);
 
     // Store control values
     TempOffset = TempOffset_->value.toInt();
-    HumOffset1 = HumOffset1_->value.toInt();
+    HumiOffset = HumiOffset_->value.toInt();
     pm01Offset = pm01Offset_->value.toInt();
     pm25Offset = pm25Offset_->value.toInt();
     pm10Offset = pm10Offset_->value.toInt();
@@ -553,21 +530,21 @@ void enterDetailsCallback(Control *sender, int type)
     eCO2Offset = eCO2Offset_->value.toInt();
     TVOCOffset = TVOCOffset_->value.toInt();
     periodSendTelemetry = periodSendTelemetry_->value.toInt();
-    email1 = email1_->value;
+    email = email_->value;
     lineID = lineID_->value;
     char data1[40];
     char data2[40];
     char data3[40];
-    email1.toCharArray(data1, 40); // Convert String to char array
+    email.toCharArray(data1, 40); // Convert String to char array
     lineID.toCharArray(data2, 40);
     deviceToken.toCharArray(data3, 40);
 
     // Print to Serial
     Serial.println("----- Submit by ESPUI -----");
     Serial.println("put TempOffset: " + String(TempOffset));
-    Serial.println("put HumOffset1: " + String(HumOffset1));
+    Serial.println("put HumiOffset: " + String(HumiOffset));
     Serial.println("put periodSendTelemetry: " + String(periodSendTelemetry));
-    Serial.println("put email1: " + String(email1));
+    Serial.println("put email: " + String(email));
     Serial.println(" ");
 
     // Write to EEPROM
@@ -576,8 +553,8 @@ void enterDetailsCallback(Control *sender, int type)
 
     EEPROM.put(addr, TempOffset);
     addr += sizeof(TempOffset);
-    EEPROM.put(addr, HumOffset1);
-    addr += sizeof(HumOffset1);
+    EEPROM.put(addr, HumiOffset);
+    addr += sizeof(HumiOffset);
     EEPROM.put(addr, pm01Offset);
     addr += sizeof(pm01Offset);
     EEPROM.put(addr, pm25Offset);
@@ -603,11 +580,11 @@ void enterDetailsCallback(Control *sender, int type)
     EEPROM.put(addr, periodSendTelemetry);
     //  addr += sizeof(periodSendTelemetry);
     addr = 70;
-    for (int len = 0; len < email1.length(); len++)
+    for (int len = 0; len < email.length(); len++)
     {
       EEPROM.write(addr + len, data1[len]); // Write each character
     }
-    EEPROM.write(addr + email1.length(), '\0'); // Add null terminator at the end
+    EEPROM.write(addr + email.length(), '\0'); // Add null terminator at the end
     addr = 110;
     for (int len = 0; len < lineID.length(); len++)
     {
@@ -630,8 +607,8 @@ void readEEPROM()
   int addr = 0;
   EEPROM.get(addr, TempOffset);
   addr += sizeof(TempOffset);
-  EEPROM.get(addr, HumOffset1);
-  addr += sizeof(HumOffset1);
+  EEPROM.get(addr, HumiOffset);
+  addr += sizeof(HumiOffset);
   EEPROM.get(addr, pm01Offset);
   addr += sizeof(pm01Offset);
   EEPROM.get(addr, pm25Offset);
@@ -662,9 +639,9 @@ void readEEPROM()
     char data1 = EEPROM.read(addr + len);
     if (data1 == '\0' || data1 == 255)
       break;
-    email1 += data1;
+    email += data1;
   }
-  //  addr += sizeof(email1);
+  //  addr += sizeof(email);
   addr = 110;
   for (int len = 0; len < 50; len++)
   {
@@ -679,9 +656,9 @@ void readEEPROM()
   // Print to Serial
   Serial.println("----- Read EEPROM Storage value by ESPUI -----");
   Serial.println("get TempOffset: " + String(TempOffset));
-  Serial.println("get HumOffset1: " + String(HumOffset1));
+  Serial.println("get HumOffset1: " + String(HumiOffset));
   Serial.println("get periodSendTelemetry: " + String(periodSendTelemetry));
-  Serial.println("get outputEmail1: " + String(email1));
+  Serial.println("get outputEmail1: " + String(email));
   Serial.println(" ");
 
   pm01Offset = 0;
@@ -695,7 +672,7 @@ void readEEPROM()
   pn100Offset = 0;
 
   ESPUI.updateNumber(tempText, TempOffset);
-  ESPUI.updateNumber(humText, HumOffset1);
+  ESPUI.updateNumber(humiText, HumiOffset);
   ESPUI.updateNumber(interval, periodSendTelemetry);
   ESPUI.updateNumber(pm01Text, pm01Offset);
   ESPUI.updateNumber(pm25Text, pm25Offset);
@@ -708,7 +685,7 @@ void readEEPROM()
   ESPUI.updateNumber(pn100Text, pn100Offset);
   ESPUI.updateNumber(eCO2Text, eCO2Offset);
   ESPUI.updateNumber(TVOCText, TVOCOffset);
-  ESPUI.updateText(emailText1, String(email1));
+  ESPUI.updateText(emailText, String(email));
   ESPUI.updateText(lineText, String(lineID));
 }
 
@@ -769,8 +746,8 @@ boolean reconnectGSMMqtt()
 void sendAttribute()
 {
   String json = "";
-  json.concat("{\"email1\":\"");
-  json.concat(String(email1));
+  json.concat("{\"email\":\"");
+  json.concat(String(email));
   json.concat("\"}");
   Serial.println(json);
 
@@ -796,7 +773,7 @@ void getDataSGP30()
 {
   Serial.println("----- Read SGP30 Sensor -----");
   float temperature = temp; // [°C]
-  float humidity = hum;     // [%RH]
+  float humidity = humi;     // [%RH]
   sgp.setHumidity(getAbsoluteHumidity(temperature, humidity));
 
   if (!sgp.IAQmeasure())
@@ -996,7 +973,7 @@ void composeJson()
   json.concat("\",\"temp\":");
   json.concat(temp + (TempOffset / 100));
   json.concat(",\"hum\":");
-  json.concat(hum + (HumOffset1 / 100));
+  json.concat(humi + (HumiOffset / 100));
   json.concat(",\"pres\":");
   json.concat(pres);
   json.concat(",\"altitude\":");
@@ -1139,7 +1116,7 @@ void t2CallShowEnv()
   tft.drawString("°C", 435, 280, GFXFF);
 
   tft.drawString(title8, 365, 310, GFXFF); // Print the test text in the custom font
-  drawH(hum + (HumOffset1 / 100), 375, 290);
+  drawH(humi + (HumiOffset / 100), 375, 290);
   tft.drawString("%", 435, 310, GFXFF);
 
   // Clear Stage
@@ -1685,12 +1662,12 @@ void setup()
     tft.drawString("Wait for WiFi Setting (Timeout 60 Sec)", tft.width() / 2, tft.height() / 2, GFXFF);
 
     // wifiManager.resetSettings();
-    String host = "QCM-" + deviceToken;
+    String host1 = "QCM-" + deviceToken;
     wifiManager.setAPCallback(configModeCallback);
     wifiManager.setConfigPortalTimeout(60); // auto close configportal after n seconds
     wifiManager.setAPClientCheck(true);     // avoid timeout if client connected to softap
     wifiManager.setBreakAfterConfig(true);  // always exit configportal even if wifi save fails
-    if (!wifiManager.autoConnect(host.c_str()))
+    if (!wifiManager.autoConnect(host1.c_str()))
     {
       Serial.println("failed to connect and hit timeout");
       delay(1000);
@@ -1721,10 +1698,10 @@ void setup()
   }
   delay(2000);
 
-  host2 = "QCM-" + deviceToken;
-  MDNS.begin(host2.c_str());
+  host = "QCM-" + deviceToken;
+  MDNS.begin(host.c_str());
   WiFi.softAPConfig(IPAddress(192, 168, 1, 1), IPAddress(192, 168, 1, 1), IPAddress(255, 255, 255, 0));
-  WiFi.softAP(host2.c_str(), passAP);
+  WiFi.softAP(host.c_str(), passAP);
 
   setUpUI(); // Start the GUI
   delay(200);
@@ -1844,7 +1821,6 @@ void loop()
   {
     previous_t1 = millis() / 1000;
     composeJson();
-    ;
   }
 
   if ((currentMillis - previous_t2) >= 5)
