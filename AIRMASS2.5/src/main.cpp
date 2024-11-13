@@ -44,10 +44,10 @@ EEPROMClass eCO2BASELINE("eeprom2");
 struct tm tmstruct;
 struct tm timeinfo;
 
-#define _TASK_SLEEP_ON_IDLE_RUN
-#define _TASK_PRIORITY
-#define _TASK_WDT_IDS
-#define _TASK_TIMECRITICAL
+// #define _TASK_SLEEP_ON_IDLE_RUN
+// #define _TASK_PRIORITY
+// #define _TASK_WDT_IDS
+// #define _TASK_TIMECRITICAL
 
 #define ProjectName "AIRMASS 2.5 Inspector"
 #define FirmwareVersion "0.0.6"
@@ -138,7 +138,8 @@ Task t8(time2send, TASK_FOREVER, &composeJson);
 #define SERIAL1_TXPIN 17 // PMS7003 UART TX to RX
 
 String deviceToken = "";
-const char *thingsboardServer = "tb.thingcontrol.io";
+// const char *thingsboardServer = "tb.thingcontrol.io";
+const char *thingsboardServer = "prakitblog.com";
 const int PORT = 1883;
 
 const char serverOTA[] = "raw.githubusercontent.com";
@@ -153,8 +154,8 @@ HardwareSerial SerialPMS(2);
 HardwareSerial SerialAT(1);
 Adafruit_SGP30 sgp;
 Adafruit_BME280 bme; // I2C
-WiFiClient wifiClient;
-PubSubClient client(wifiClient);
+// WiFiClient wifiClient;
+// PubSubClient client(wifiClient);
 WiFiManager wifiManager;
 Scheduler runner;
 SerialPM pms(PMSx003, SerialPMS); // PMSx003, UART
@@ -170,6 +171,9 @@ PubSubClient GSMmqtt(gsm_mqtt_client);
 TinyGsmClient base_client(modem, 1);
 SSLClient secure_layer(&base_client);
 HttpClient GSMclient = HttpClient(secure_layer, serverOTA, port);
+
+WiFiClient wifiClient;
+PubSubClient client(wifiClient);
 
 String host = "";
 #define FORCE_USE_HOTSPOT 0
@@ -449,11 +453,11 @@ void setUpUI()
   idLabel = ESPUI.addControl(Label, "Device ID", String(deviceToken), Emerald, maintab);
   firmwarelabel = ESPUI.addControl(Label, "Firmware", String(FirmwareVer), Emerald, maintab);
 
-   /*
-     Tab: Setting
-    -----------------------------------------------------------------------------------------------------------*/
+  /*
+    Tab: Setting
+   -----------------------------------------------------------------------------------------------------------*/
   auto settingTab = ESPUI.addControl(Tab, "", "Setting");
-  cuationlabel = ESPUI.addControl(Label, "Cuation", "Offset will be divided by 100 after saving.", Emerald, settingTab);
+  cuationlabel = ESPUI.addControl(Label, "Cuation", "Offset will be divided by 100 after saving.", Alizarin, settingTab);
   ESPUI.addControl(Separator, "Offset Configuration", "", None, settingTab);
   tempText = ESPUI.addControl(Number, "Temperature", String(TempOffset), Emerald, settingTab, enterDetailsCallback);
   humiText = ESPUI.addControl(Number, "Humidity", String(HumiOffset), Emerald, settingTab, enterDetailsCallback);
@@ -468,9 +472,9 @@ void setUpUI()
   pn50Text = ESPUI.addControl(Number, "5.0 micrometer", String(pn50Offset), Emerald, settingTab, enterDetailsCallback);
   pn100Text = ESPUI.addControl(Number, "10 micrometer", String(pn100Offset), Emerald, settingTab, enterDetailsCallback);
   eCO2Text = ESPUI.addControl(Number, "Carbon dioxide (eCO2)", String(eCO2Offset), Emerald, settingTab, enterDetailsCallback);
-  TVOCText = ESPUI.addControl(Number, "Volatile organic Compounds", String(TVOCOffset), Emerald, settingTab, enterDetailsCallback);
+  TVOCText = ESPUI.addControl(Number, "Volatile organic Compounds (TVOC)", String(TVOCOffset), Emerald, settingTab, enterDetailsCallback);
   ESPUI.addControl(Separator, "Interval Configuration", "", None, settingTab);
-  interval = ESPUI.addControl(Number, "Interval (second)", String(periodSendTelemetry), Emerald, settingTab, enterDetailsCallback);
+  interval = ESPUI.addControl(Number, "Interval (second)", String(periodSendTelemetry), Alizarin, settingTab, enterDetailsCallback);
 
   ESPUI.addControl(Separator, "Email Registry", "", None, settingTab);
   emailText = ESPUI.addControl(Text, "Email User", "", Emerald, settingTab, enterDetailsCallback);
@@ -490,6 +494,9 @@ void setUpUI()
 
 void enterDetailsCallback(Control *sender, int type)
 {
+  Serial.print("ESP UI: Type=");
+  Serial.print(type);
+  Serial.print(" | Sender=");
   Serial.println(sender->value);
   ESPUI.updateControl(sender);
 
@@ -656,9 +663,9 @@ void readEEPROM()
   // Print to Serial
   Serial.println("----- Read EEPROM Storage value by ESPUI -----");
   Serial.println("get TempOffset: " + String(TempOffset));
-  Serial.println("get HumOffset1: " + String(HumiOffset));
+  Serial.println("get HumOffset: " + String(HumiOffset));
   Serial.println("get periodSendTelemetry: " + String(periodSendTelemetry));
-  Serial.println("get outputEmail1: " + String(email));
+  Serial.println("get outputEmail: " + String(email));
   Serial.println(" ");
 
   pm01Offset = 0;
@@ -704,7 +711,8 @@ boolean reconnectWiFiMqtt()
   SerialMon.print("Connecting to ");
   SerialMon.print(thingsboardServer);
 
-  boolean status = client.connect(deviceToken.c_str(), deviceToken.c_str(), NULL);
+  // boolean status = client.connect(deviceToken.c_str(), deviceToken.c_str(), NULL);
+  boolean status = client.connect(deviceToken.c_str(), "prakit340", "hnung123");
 
   if (status == false)
   {
@@ -773,7 +781,7 @@ void getDataSGP30()
 {
   Serial.println("----- Read SGP30 Sensor -----");
   float temperature = temp; // [°C]
-  float humidity = humi;     // [%RH]
+  float humidity = humi;    // [%RH]
   sgp.setHumidity(getAbsoluteHumidity(temperature, humidity));
 
   if (!sgp.IAQmeasure())
@@ -1530,6 +1538,8 @@ void setup()
   SerialPMS.begin(9600, SERIAL_8N1, SERIAL1_RXPIN, SERIAL1_TXPIN);
   SerialAT.begin(UART_BAUD, SERIAL_8N1, MODEM_RX, MODEM_TX);
 
+  heartBeat();
+
   Project = ProjectName;
   FirmwareVer = FirmwareVersion;
   getMac();
@@ -1540,9 +1550,11 @@ void setup()
   pms.init();
   readEEPROM();
 
+  heartBeat();
+
   Serial.println(F("---- Starting... QCM - AIRMASS 2.5 ----"));
 
-  boolean GSMgprs = true;
+  boolean GSMgprs = false;
 
   delay(2000);
   // pinMode(GSM_RESET, OUTPUT);
@@ -1551,7 +1563,8 @@ void setup()
   SerialMon.println("Wait...");
 
   secure_layer.setCACert(root_ca);
-
+  
+  heartBeat();
   tft.setTextColor(TFT_GREEN);
   tft.setTextDatum(MC_DATUM);
   for (int i = 30; i < 100; i++)
@@ -1573,6 +1586,8 @@ void setup()
     tft.drawString(".", 1 + 2 * i, 260, GFXFF);
     delay(10);
   }
+
+  heartBeat();
 
   tft.setTextPadding(180);
   tft.setTextColor(TFT_WHITE);
@@ -1602,29 +1617,34 @@ void setup()
     delay(10);
   }
 
-  String showText = "Connecting to ";
-  showText += apn;
-  showText += " ...";
-  tft.setTextPadding(180);
-  tft.setTextColor(TFT_WHITE);
-  tft.setTextDatum(TL_DATUM);
-  tft.drawString(showText, 100, 200, GFXFF);
-  Serial.print("Connecting to ");
-  Serial.print(apn);
-  if (!modem.gprsConnect(apn, user, pass))
+  heartBeat();
+
+  if (GSMnetwork)
   {
-    GSMgprs = false;
-    tft.drawString(" Fail", 320, 200, GFXFF);
-    Serial.println(" fail");
-    delay(10000);
+    String showText = "Connecting to ";
+    showText += apn;
+    showText += " ...";
+    tft.setTextPadding(180);
+    tft.setTextColor(TFT_WHITE);
+    tft.setTextDatum(TL_DATUM);
+    tft.drawString(showText, 100, 200, GFXFF);
+    Serial.print("Connecting to ");
+    Serial.print(apn);
+    if (!modem.gprsConnect(apn, user, pass))
+    {
+      GSMgprs = false;
+      tft.drawString(" Fail", 320, 200, GFXFF);
+      Serial.println(" fail");
+      delay(10000);
+    }
+    else
+    {
+      GSMgprs = true;
+      tft.drawString(" OK", 320, 200, GFXFF);
+      Serial.println(" OK");
+    }
+    delay(3000);
   }
-  else
-  {
-    GSMgprs = true;
-    tft.drawString(" OK", 320, 200, GFXFF);
-    Serial.println(" OK");
-  }
-  delay(3000);
 
   tft.setTextColor(TFT_GREEN);
   tft.setTextDatum(MC_DATUM);
@@ -1634,6 +1654,7 @@ void setup()
     delay(10);
   }
 
+  heartBeat();
   Serial.println(" ");
   Serial.println("===================");
   Serial.print("GSM Network: ");
@@ -1653,9 +1674,11 @@ void setup()
     connectWifi = true;
   }
 
+  heartBeat();
+
   if (connectWifi)
   {
-    Serial.print("Start Config WiFi because GSM lose ..");
+    Serial.println("Start Config WiFi because GSM lose ..");
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(TFT_GREEN);
     tft.fillScreen(TFT_DARKCYAN);
@@ -1671,6 +1694,9 @@ void setup()
     {
       Serial.println("failed to connect and hit timeout");
       delay(1000);
+    }
+    else {
+      Serial.println("connected...yeey :)");
     }
 
     configTime(3600 * timezone, daysavetime * 3600, "0.pool.ntp.org", "1.pool.ntp.org", "time.nist.gov");
@@ -1698,7 +1724,10 @@ void setup()
   }
   delay(2000);
 
-  host = "QCM-" + deviceToken;
+  heartBeat();
+
+  
+  host = "QCM-" + deviceToken.substring(6);;
   MDNS.begin(host.c_str());
   WiFi.softAPConfig(IPAddress(192, 168, 1, 1), IPAddress(192, 168, 1, 1), IPAddress(255, 255, 255, 0));
   WiFi.softAP(host.c_str(), passAP);
@@ -1726,6 +1755,7 @@ void setup()
   previous_t3 = millis() / 1000;
   previous_t4 = millis() / 1000;
   previous_t5 = millis() / 1000;
+  heartBeat();
 }
 
 void loop()
@@ -1738,8 +1768,8 @@ void loop()
     {
       Serial.println("=== WiFi MQTT NOT CONNECTED ===");
       // Reconnect every 10 seconds
-      uint32_t t = millis();
-      if (t - lastReconnectAttempt > 10000L)
+      uint32_t t = millis()/1000;
+      if (t - lastReconnectAttempt >= 30)
       {
         lastReconnectAttempt = t;
         if (reconnectWiFiMqtt())
@@ -1792,8 +1822,8 @@ void loop()
     {
       SerialMon.println("=== GSM MQTT NOT CONNECTED ===");
       // Reconnect every 10 seconds
-      uint32_t t = millis();
-      if (t - lastReconnectAttempt > 10000L)
+      uint32_t t = millis() / 1000;
+      if (t - lastReconnectAttempt >= 30)
       {
         lastReconnectAttempt = t;
         if (reconnectGSMMqtt())
@@ -1808,16 +1838,9 @@ void loop()
     GSMmqtt.loop();
   }
 
-  const unsigned long currentMillis = millis() / 1000;
-  const unsigned long time2send = periodSendTelemetry;
+  unsigned long currentMillis = millis() / 1000;
 
-  if (currentMillis % time2send == 0)
-  {
-    composeJson();
-    delayMicroseconds(200000);
-  }
-
-  if ((currentMillis - previous_t1) >= 60)
+  if ((currentMillis - previous_t1) >= periodSendTelemetry)
   {
     previous_t1 = millis() / 1000;
     composeJson();
