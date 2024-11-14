@@ -41,9 +41,6 @@
 EEPROMClass TVOCBASELINE("eeprom1");
 EEPROMClass eCO2BASELINE("eeprom2");
 
-struct tm tmstruct;
-struct tm timeinfo;
-
 // #define _TASK_SLEEP_ON_IDLE_RUN
 // #define _TASK_PRIORITY
 // #define _TASK_WDT_IDS
@@ -138,8 +135,7 @@ Task t8(time2send, TASK_FOREVER, &composeJson);
 #define SERIAL1_TXPIN 17 // PMS7003 UART TX to RX
 
 String deviceToken = "";
-// const char *thingsboardServer = "tb.thingcontrol.io";
-const char *thingsboardServer = "prakitblog.com";
+ const char *thingsboardServer = "tb.thingcontrol.io";
 const int PORT = 1883;
 
 const char serverOTA[] = "raw.githubusercontent.com";
@@ -154,8 +150,6 @@ HardwareSerial SerialPMS(2);
 HardwareSerial SerialAT(1);
 Adafruit_SGP30 sgp;
 Adafruit_BME280 bme; // I2C
-// WiFiClient wifiClient;
-// PubSubClient client(wifiClient);
 WiFiManager wifiManager;
 Scheduler runner;
 SerialPM pms(PMSx003, SerialPMS); // PMSx003, UART
@@ -172,11 +166,10 @@ TinyGsmClient base_client(modem, 1);
 SSLClient secure_layer(&base_client);
 HttpClient GSMclient = HttpClient(secure_layer, serverOTA, port);
 
-WiFiClient wifiClient;
-PubSubClient client(wifiClient);
+WiFiClient espClient;
+PubSubClient client(espClient);
 
 String host = "";
-#define FORCE_USE_HOTSPOT 0
 
 #define CF_OL24 &Orbitron_Light_24
 #define CF_OL32 &Orbitron_Light_32
@@ -211,6 +204,10 @@ int eCO2Offset = 0;
 int TVOCOffset = 0;
 String bmeStatus = "";
 String mqttStatus = "";
+
+const char *ntpServer1 = "pool.ntp.org";
+const char *ntpServer2 = "time.nist.gov";
+const long gmtOffset_sec = 3600 * 7;
 
 boolean GSMnetwork = false;
 boolean GSMgprs = false;
@@ -380,7 +377,7 @@ void _initBME280()
     delay(1000);
   }
 
-  bmeStatus = "Initialize BME sensor";
+  bmeStatus = "Initialize BME sensor: OK";
   ESPUI.updateLabel(bmeLog, String(bmeStatus));
 }
 
@@ -488,7 +485,7 @@ void setUpUI()
   teleLog = ESPUI.addControl(Label, "Server Connection Status", String(mqttStatus), Alizarin, eventTab, enterDetailsCallback);
   bmeLog = ESPUI.addControl(Label, "Sensor Connection Status", String(bmeStatus), Alizarin, eventTab, enterDetailsCallback);
 
-  host = "QCM-" + deviceToken;
+  host = "QCM-" + deviceToken.substring(6);
   ESPUI.begin(host.c_str());
 }
 
@@ -711,8 +708,7 @@ boolean reconnectWiFiMqtt()
   SerialMon.print("Connecting to ");
   SerialMon.print(thingsboardServer);
 
-  // boolean status = client.connect(deviceToken.c_str(), deviceToken.c_str(), NULL);
-  boolean status = client.connect(deviceToken.c_str(), "prakit340", "hnung123");
+  boolean status = client.connect(deviceToken.c_str(), deviceToken.c_str(), NULL);
 
   if (status == false)
   {
@@ -1178,25 +1174,14 @@ byte daysavetime = 0;
 
 void t7showTime()
 {
+  struct tm timeinfo;
+  
   Serial.println("---- Show time ----");
   topNumber.createSprite(200, 40);
   //  stringPM1.fillSprite(TFT_GREEN);
   topNumber.setFreeFont(FS9);
   topNumber.setTextColor(TFT_WHITE);
   topNumber.setTextSize(1); // Font size scaling is x1
-  String yearStr = "";
-  String monthStr = "";
-  String dayStr = "";
-  String hourStr = "";
-  String minStr = "";
-  tmstruct.tm_year = 0;
-  configTime(3600 * timezone, daysavetime * 3600, "pool.ntp.org");
-  getLocalTime(&tmstruct, 5000);
-  yearStr = String(tmstruct.tm_year + 1900, DEC);
-  monthStr = String(tmstruct.tm_mon + 1, DEC);
-  dayStr = String(tmstruct.tm_mday, DEC);
-  hourStr = String(a0(tmstruct.tm_hour));
-  minStr = String(a0(tmstruct.tm_min));
 
   int year3 = 0;
   int month3 = 0;
@@ -1206,12 +1191,11 @@ void t7showTime()
   int sec3 = 0;
   float timezone = 0;
 
-  //  unsigned long NowTime = _epoch + ((millis() - time_s) / 1000) + (7 * 3600);
   String timeS = "";
 
   if (connectWifi == false)
   {
-    Serial.println("---- Asking modem to sync with NTP ----");
+    Serial.println("---- Asking GSM modem to sync with NTP ----");
     modem.NTPServerSync("132.163.96.5", 20);
 
     for (int8_t i = 5; i; i--)
@@ -1247,12 +1231,12 @@ void t7showTime()
   }
   else
   {
-    if (!getLocalTime(&timeinfo))
+    if(!getLocalTime(&timeinfo))
     {
       Serial.println("Failed to obtain time");
-      //      ESP.restart();
       return;
     }
+    timeS = a0(timeinfo.tm_mday) + "/" + a0(timeinfo.tm_mon + 1) + "/" + String(timeinfo.tm_year + 1900) + "  " + a0(timeinfo.tm_hour) + ":" + a0(timeinfo.tm_min) + "";
   }
 
   topNumber.drawString(timeS, 5, 5, GFXFF);
@@ -1563,7 +1547,7 @@ void setup()
   SerialMon.println("Wait...");
 
   secure_layer.setCACert(root_ca);
-  
+
   heartBeat();
   tft.setTextColor(TFT_GREEN);
   tft.setTextDatum(MC_DATUM);
@@ -1685,7 +1669,7 @@ void setup()
     tft.drawString("Wait for WiFi Setting (Timeout 60 Sec)", tft.width() / 2, tft.height() / 2, GFXFF);
 
     // wifiManager.resetSettings();
-    String host1 = "QCM-" + deviceToken;
+    String host1 = "QCM-" + deviceToken.substring(6);
     wifiManager.setAPCallback(configModeCallback);
     wifiManager.setConfigPortalTimeout(60); // auto close configportal after n seconds
     wifiManager.setAPClientCheck(true);     // avoid timeout if client connected to softap
@@ -1695,39 +1679,41 @@ void setup()
       Serial.println("failed to connect and hit timeout");
       delay(1000);
     }
-    else {
+    else
+    {
       Serial.println("connected...yeey :)");
     }
-
-    configTime(3600 * timezone, daysavetime * 3600, "0.pool.ntp.org", "1.pool.ntp.org", "time.nist.gov");
   }
 
   if (connectWifi)
   {
+    configTime(gmtOffset_sec, 0, ntpServer1, ntpServer2);
+
     tft.setTextDatum(BR_DATUM);
     tft.setFreeFont(FF1);
-    tft.setTextColor(TFT_RED);
+    tft.setTextColor(TFT_WHITE);
     String onlineBy = "Online by WiFi";
     tft.drawString(onlineBy, 475, 320, GFXFF);
 
     client.setServer(thingsboardServer, PORT);
+    reconnectWiFiMqtt();
   }
   else
   {
     tft.setTextDatum(BR_DATUM);
     tft.setFreeFont(FF1);
-    tft.setTextColor(TFT_RED);
+    tft.setTextColor(TFT_WHITE);
     String onlineBy = "Online by GSM";
     tft.drawString(onlineBy, 475, 320, GFXFF);
 
     GSMmqtt.setServer(thingsboardServer, PORT);
+    reconnectGSMMqtt();
   }
-  delay(2000);
+  delay(3000);
 
   heartBeat();
 
-  
-  host = "QCM-" + deviceToken.substring(6);;
+  host = "QCM-" + deviceToken.substring(6);
   MDNS.begin(host.c_str());
   WiFi.softAPConfig(IPAddress(192, 168, 1, 1), IPAddress(192, 168, 1, 1), IPAddress(255, 255, 255, 0));
   WiFi.softAP(host.c_str(), passAP);
@@ -1768,7 +1754,7 @@ void loop()
     {
       Serial.println("=== WiFi MQTT NOT CONNECTED ===");
       // Reconnect every 10 seconds
-      uint32_t t = millis()/1000;
+      uint32_t t = millis() / 1000;
       if (t - lastReconnectAttempt >= 30)
       {
         lastReconnectAttempt = t;
@@ -1870,6 +1856,12 @@ void loop()
   {
     previous_t5 = millis() / 1000;
     // OTA_git_CALL();
-    GSM_OTA();
+
+    if(connectWifi)
+    {
+
+    }else{
+      GSM_OTA();
+    }
   }
 }
