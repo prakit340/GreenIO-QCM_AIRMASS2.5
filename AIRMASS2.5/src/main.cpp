@@ -24,6 +24,8 @@
 #include <SSLClient.h>
 #include "cert.h"
 #include <PMserial.h>
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 
 #include <http_ota.h>
 #include "QcomLoGo.h"
@@ -51,6 +53,9 @@ EEPROMClass eCO2BASELINE("eeprom2");
 String current_version = "0.0.6";
 
 const char *passAP = "greenio7650";
+
+#define pingCount 5 // Error time count 5 to reset
+unsigned int CountPing = 0;
 
 #define SEALEVELPRESSURE_HPA (1013.25)
 
@@ -135,7 +140,7 @@ Task t8(time2send, TASK_FOREVER, &composeJson);
 #define SERIAL1_TXPIN 17 // PMS7003 UART TX to RX
 
 String deviceToken = "";
- const char *thingsboardServer = "tb.thingcontrol.io";
+const char *thingsboardServer = "tb.thingcontrol.io";
 const int PORT = 1883;
 
 const char serverOTA[] = "raw.githubusercontent.com";
@@ -143,6 +148,8 @@ const int port = 443;
 
 String new_version;
 const char version_url[] = "/prakit340/GreenIO-OTA/main/ota/product/qualcomm/airmass25/version.txt"; // "/IndustrialArduino/OTA-on-ESP/release/version.txt";  https://raw.githubusercontent.com/:owner/:repo/master/:path
+
+const char* version_url_WiFiOTA = "https://raw.githubusercontent.com/prakit340/GreenIO-OTA/main/ota/product/qualcomm/airmass25/version.txt"; // "/IndustrialArduino/OTA-on-ESP/release/version.txt";  https://raw.githubusercontent.com/:owner/:repo/master/:path
 
 String firmware_url;
 
@@ -181,8 +188,8 @@ String host = "";
 #define title5 "VOC"
 #define title6 "Update"
 #define title7 "ug/m3"
-#define title8 "HUMI: "
-#define title9 "TEMP: "
+#define title8 "HUMI"
+#define title9 "TEMP"
 #define FILLCOLOR1 0xFFFF
 
 unsigned BMEstatus;
@@ -415,8 +422,8 @@ void _initSGP30()
 void printBME280Data()
 {
   Serial.println("----- Read BME280 ------");
-  temp = bme.readTemperature() + (TempOffset); // compensate
-  humi = bme.readHumidity() + (HumiOffset);
+  temp = bme.readTemperature() + (TempOffset / 100); // compensate
+  humi = bme.readHumidity() + (HumiOffset / 100);
   pres = bme.readPressure() / 100.0F;
   altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
   Serial.print("Temp: ");
@@ -665,16 +672,6 @@ void readEEPROM()
   Serial.println("get outputEmail: " + String(email));
   Serial.println(" ");
 
-  pm01Offset = 0;
-  pm25Offset = 0;
-  pm10Offset = 0;
-  pn03Offset = 0;
-  pn05Offset = 0;
-  pn10Offset = 0;
-  pn25Offset = 0;
-  pn50Offset = 0;
-  pn100Offset = 0;
-
   ESPUI.updateNumber(tempText, TempOffset);
   ESPUI.updateNumber(humiText, HumiOffset);
   ESPUI.updateNumber(interval, periodSendTelemetry);
@@ -791,6 +788,9 @@ void getDataSGP30()
   Serial.print("eCO2 ");
   Serial.print(sgp.eCO2);
   Serial.println(" ppm");
+
+  sgp.TVOC = sgp.TVOC + (TVOCOffset / 100);
+  sgp.eCO2 = sgp.eCO2 + (eCO2Offset / 100);
 
   if (!sgp.IAQmeasureRaw())
   {
@@ -939,7 +939,8 @@ void t3CallSendData()
     Serial.println("connectwifi boolean: " + String(connectWifi));
 
     int csq = modem.getSignalQuality();
-    int rssi = map(csq, 0, 31, 25, 100);
+    int rssi = map(csq, 0, 31, 0, 100);
+    rssi = constrain(rssi, 0, 100);
     tft.fillRect(425, 5, 55, 35, 0x0000);
     tft.drawString(String(rssi) + "%", mapX, mapY, GFXFF);
     // tft.pushImage(400, 0, logo4gWidth, logo4gHeight, Logo4g);
@@ -950,15 +951,12 @@ void t3CallSendData()
   }
   else if (WiFi.status() == WL_CONNECTED)
   {
-    int rssi = map(WiFi.RSSI(), -90, -50, 25, 100);
-    if (rssi > 100)
-      rssi = 100;
-    if (rssi < 0)
-      rssi = 0;
+    int rssi = map(WiFi.RSSI(), -100, -50, 0, 100);
+    rssi = constrain(rssi, 0, 100);
     tft.fillRect(425, 5, 55, 35, 0x0000);
     tft.drawString(String(rssi) + "%", mapX, mapY, GFXFF);
     tft.fillCircle(406, 16, 16, tft.color24to16(0x00a7ff));
-    tft.setTextColor(TFT_YELLOW);
+    tft.setTextColor(TFT_WHITE);
     tft.setFreeFont(FSSB9);
     tft.drawString("W", 415, 27);
     // client.setInsecure();
@@ -975,31 +973,31 @@ void composeJson()
   json.concat("{\"Tn\":\"");
   json.concat(deviceToken);
   json.concat("\",\"temp\":");
-  json.concat(temp + (TempOffset / 100));
+  json.concat(temp);
   json.concat(",\"hum\":");
-  json.concat(humi + (HumiOffset / 100));
+  json.concat(humi);
   json.concat(",\"pres\":");
   json.concat(pres);
   json.concat(",\"altitude\":");
   json.concat(altitude);
   json.concat(",\"pm1\":");
-  json.concat(data.pm01_env + (pm01Offset / 100));
+  json.concat(data.pm01_env);
   json.concat(",\"pm2.5\":");
-  json.concat(data.pm25_env + (pm25Offset / 100));
+  json.concat(data.pm25_env);
   json.concat(",\"pm10\":");
-  json.concat(data.pm100_env + (pm10Offset / 100));
+  json.concat(data.pm100_env);
   json.concat(",\"pn03\":");
-  json.concat(data.particles_03um + (pn03Offset / 100));
+  json.concat(data.particles_03um);
   json.concat(",\"pn05\":");
-  json.concat(data.particles_05um + (pn05Offset / 100));
+  json.concat(data.particles_05um);
   json.concat(",\"pn10\":");
-  json.concat(data.particles_10um + (pn10Offset / 100));
+  json.concat(data.particles_10um);
   json.concat(",\"pn25\":");
-  json.concat(data.particles_25um + (pn25Offset / 100));
+  json.concat(data.particles_25um);
   json.concat(",\"pn50\":");
-  json.concat(data.particles_50um + (pn50Offset / 100));
+  json.concat(data.particles_50um);
   json.concat(",\"pn100\":");
-  json.concat(data.particles_100um + (pn100Offset / 100));
+  json.concat(data.particles_100um);
   json.concat(",\"co2\":");
   json.concat(sgp.eCO2);
   json.concat(",\"voc\":");
@@ -1083,17 +1081,17 @@ void t2CallShowEnv()
   tft.setFreeFont(CF_OL24);
   int mid = (tftMax / 2) - 90;
   tft.setTextPadding(100);
-  tft.drawString(title7, xpos - 90, 170, GFXFF); // Print the test text in the custom font
+  tft.drawString(title7, xpos - 90, 145, GFXFF); // Print the test text in the custom font
 
   tft.setFreeFont(CF_OL32);
-  tft.drawString(title1, xpos - 90, 200, GFXFF); // Print the test text in the custom font
+  tft.drawString(title1, xpos - 90, 175, GFXFF); // Print the test text in the custom font
 
   // ################################################################ for testing
   //        data.pm25_env = testNum;    //for testing
   //        testNum++;
   // ################################################################ end test
 
-  drawPM2_5(data.pm25_env + (pm25Offset / 100), mid, 70);
+  drawPM2_5(data.pm25_env, mid, 55);
 
   tft.setTextSize(1);
   tft.setFreeFont(CF_OL32); // Select the font
@@ -1103,63 +1101,108 @@ void t2CallShowEnv()
   tft.setTextSize(1);
   tft.setFreeFont(FSB9); // Select Free Serif 9 point font, could use:
 
-  tft.drawString(title2, 45, 280, GFXFF); // Print the test text in the custom font
-  drawPM1(data.pm01_env + (pm01Offset / 100), 11, 290);
+  tft.drawString(title2, 45, 260, GFXFF); // Print the test text in the custom font
+  drawPM1(data.pm01_env, 11, 270);
+  tft.setTextDatum(BL_DATUM);
+  tft.drawString("ug/m3", 11, 315, GFXFF); // Print the test text in the custom font
 
-  tft.drawString(title3, 115, 280, GFXFF); // Print the test text in the custom font
-  drawPM10(data.pm100_env + (pm10Offset / 100), 70, 290);
+  tft.setTextDatum(BR_DATUM);
+  tft.drawString(title3, 115, 260, GFXFF); // Print the test text in the custom font
+  drawPM10(data.pm100_env, 70, 270);
+  tft.setTextDatum(BL_DATUM);
+  tft.drawString("ug/m3", 70, 315, GFXFF);
 
-  tft.drawString(title4, 175, 280, GFXFF); // Print the test text in the custom font
-  drawCO2(sgp.eCO2, 140, 290);
+  tft.setTextDatum(BR_DATUM);
+  tft.drawString(title4, 175, 260, GFXFF); // Print the test text in the custom font
+  drawCO2(sgp.eCO2, 140, 270);
+  tft.setTextDatum(BL_DATUM);
+  tft.drawString("ppm", 140, 315, GFXFF);
 
-  tft.drawString(title5, 245, 280, GFXFF); // Print the test text in the custom font
-  drawVOC(sgp.TVOC, 205, 290);
+  tft.setTextDatum(BR_DATUM);
+  tft.drawString(title5, 245, 260, GFXFF); // Print the test text in the custom font
+  drawVOC(sgp.TVOC, 205, 270);
+  tft.setTextDatum(BL_DATUM);
+  tft.drawString("ppb", 205, 315, GFXFF);
 
-  tft.drawString(title9, 365, 280, GFXFF); // Print the test text in the custom font
-  drawT(temp + (TempOffset / 100), 375, 260);
-  tft.drawString("°C", 435, 280, GFXFF);
+  tft.setTextDatum(BR_DATUM);
+  tft.drawString(title9, 355, 260, GFXFF); // Print the test text in the custom font
+  drawT(temp, 305, 270);
+  tft.setTextDatum(BL_DATUM);
+  tft.drawString("°C", 305, 315, GFXFF);
 
-  tft.drawString(title8, 365, 310, GFXFF); // Print the test text in the custom font
-  drawH(humi + (HumiOffset / 100), 375, 290);
-  tft.drawString("%", 435, 310, GFXFF);
+  tft.setTextDatum(BR_DATUM);
+  tft.drawString(title8, 445, 260, GFXFF); // Print the test text in the custom font
+  drawH(humi, 395, 270);
+  tft.setTextDatum(BL_DATUM);
+  tft.drawString("%", 395, 315, GFXFF);
+
+  tft.setTextDatum(BR_DATUM);
 
   // Clear Stage
 
   ind.createSprite(480, 10);
   ind.fillSprite(TFT_BLACK);
 
-  if ((data.pm25_env + (pm25Offset / 100) >= 0) && (data.pm25_env + (pm25Offset / 100) <= 15.4))
+  // if ((data.pm25_env >= 0) && (data.pm25_env <= 15.4))
+  // {
+  //   tft.setWindow(0, 25, 55, 55);
+  //   tft.pushImage(tft.width() - lv1Width - 60, 70, lv1Width, lv1Height, lv1);
+  //   ind.fillTriangle(7, 0, 12, 5, 17, 0, FILLCOLOR1);
+  // }
+  // else if ((data.pm25_env >= 15.5) && (data.pm25_env <= 40.4))
+  // {
+  //   tft.pushImage(tft.width() - lv2Width - 60, 70, lv2Width, lv2Height, lv2);
+  //   ind.fillTriangle(82, 0, 87, 5, 92, 0, FILLCOLOR1);
+  // }
+  // else if ((data.pm25_env >= 40.5) && (data.pm25_env <= 65.4))
+  // {
+  //   tft.pushImage(tft.width() - lv3Width - 60, 70, lv3Width, lv3Height, lv3);
+  //   ind.fillTriangle(160, 0, 165, 5, 170, 0, FILLCOLOR1);
+  // }
+  // else if ((data.pm25_env >= 65.5) && (data.pm25_env <= 150.4))
+  // {
+  //   tft.pushImage(tft.width() - lv4Width - 60, 70, lv4Width, lv4Height, lv4);
+  //   ind.fillTriangle(240, 0, 245, 5, 250, 0, FILLCOLOR1);
+  // }
+  // else if ((data.pm25_env >= 150.5) && (data.pm25_env <= 250.4))
+  // {
+  //   tft.pushImage(tft.width() - lv5Width - 60, 70, lv5Width, lv5Height, lv5);
+  //   ind.fillTriangle(320, 0, 325, 5, 330, 0, FILLCOLOR1);
+  // }
+  // else
+  // {
+  //   tft.pushImage(tft.width() - lv6Width - 60, 70, lv6Width, lv6Height, lv6);
+  //   ind.fillTriangle(400, 0, 405, 5, 410, 0, FILLCOLOR1);
+  // }
+
+  if ((data.pm25_env >= 0) && (data.pm25_env <= 15))
   {
     tft.setWindow(0, 25, 55, 55);
-    tft.pushImage(tft.width() - lv1Width - 60, 70, lv1Width, lv1Height, lv1);
+    tft.pushImage(tft.width() - lv1Width - 60, 65, lv1Width, lv1Height, lv1);
     ind.fillTriangle(7, 0, 12, 5, 17, 0, FILLCOLOR1);
   }
-  else if ((data.pm25_env + (pm25Offset / 100) >= 15.5) && (data.pm25_env + (pm25Offset / 100) <= 40.4))
+  else if ((data.pm25_env >= 15.1) && (data.pm25_env <= 25))
   {
-    tft.pushImage(tft.width() - lv2Width - 60, 70, lv2Width, lv2Height, lv2);
+    tft.pushImage(tft.width() - lv2Width - 60, 65, lv2Width, lv2Height, lv2);
     ind.fillTriangle(82, 0, 87, 5, 92, 0, FILLCOLOR1);
   }
-  else if ((data.pm25_env + (pm25Offset / 100) >= 40.5) && (data.pm25_env + (pm25Offset / 100) <= 65.4))
+  else if ((data.pm25_env >= 25.1) && (data.pm25_env <= 37.5))
   {
-    tft.pushImage(tft.width() - lv3Width - 60, 70, lv3Width, lv3Height, lv3);
+    tft.pushImage(tft.width() - lv3Width - 60, 65, lv3Width, lv3Height, lv3);
     ind.fillTriangle(160, 0, 165, 5, 170, 0, FILLCOLOR1);
   }
-  else if ((data.pm25_env + (pm25Offset / 100) >= 65.5) && (data.pm25_env + (pm25Offset / 100) <= 150.4))
+  else if ((data.pm25_env >= 37.6) && (data.pm25_env <= 75))
   {
-    tft.pushImage(tft.width() - lv4Width - 60, 70, lv4Width, lv4Height, lv4);
+    tft.pushImage(tft.width() - lv4Width - 60, 65, lv4Width, lv4Height, lv4);
     ind.fillTriangle(240, 0, 245, 5, 250, 0, FILLCOLOR1);
   }
-  else if ((data.pm25_env + (pm25Offset / 100) >= 150.5) && (data.pm25_env + (pm25Offset / 100) <= 250.4))
+  else if (data.pm25_env >= 75.1)
   {
-    tft.pushImage(tft.width() - lv5Width - 60, 70, lv5Width, lv5Height, lv5);
-    ind.fillTriangle(320, 0, 325, 5, 330, 0, FILLCOLOR1);
+    tft.pushImage(tft.width() - lv5Width - 60, 65, lv5Width, lv5Height, lv5);
+    ind.fillTriangle(360, 0, 365, 5, 370, 0, FILLCOLOR1);
   }
-  else
-  {
-    tft.pushImage(tft.width() - lv6Width - 60, 70, lv6Width, lv6Height, lv6);
-    ind.fillTriangle(400, 0, 405, 5, 410, 0, FILLCOLOR1);
-  }
-  ind.pushSprite(29, 230);
+
+  ind.pushSprite(29, 215);
   ind.deleteSprite();
 }
 
@@ -1168,14 +1211,10 @@ String a0(int n)
   return (n < 10) ? "0" + String(n) : String(n);
 }
 
-String dateTimeStr = "";
-long timezone = 7;
-byte daysavetime = 0;
-
 void t7showTime()
 {
   struct tm timeinfo;
-  
+
   Serial.println("---- Show time ----");
   topNumber.createSprite(200, 40);
   //  stringPM1.fillSprite(TFT_GREEN);
@@ -1231,11 +1270,20 @@ void t7showTime()
   }
   else
   {
-    if(!getLocalTime(&timeinfo))
+    if (!getLocalTime(&timeinfo))
     {
       Serial.println("Failed to obtain time");
+
+      if (CountPing >= pingCount)
+      {
+        CountPing = 0;
+        ESP.restart();
+      }
+      CountPing++;
+
       return;
     }
+    CountPing = 0;
     timeS = a0(timeinfo.tm_mday) + "/" + a0(timeinfo.tm_mon + 1) + "/" + String(timeinfo.tm_year + 1900) + "  " + a0(timeinfo.tm_hour) + ":" + a0(timeinfo.tm_min) + "";
   }
 
@@ -1262,16 +1310,16 @@ void readPMSdata()
     //   Serial.printf("N0.3 %4d, N0.5 %3d, N1.0 %2d, N2.5 %2d, N5.0 %2d, N10 %2d [#/100cc]\n",
     //                 pms.n0p3, pms.n0p5, pms.n1p0, pms.n2p5, pms.n5p0, pms.n10p0);
 
-    data.pm01_env = pms.pm01;
-    data.pm25_env = pms.pm25;
-    data.pm100_env = pms.pm10;
+    data.pm01_env = pms.pm01 + (pm01Offset / 100);
+    data.pm25_env = pms.pm25 + (pm25Offset / 100);
+    data.pm100_env = pms.pm10 + (pm10Offset / 100);
 
-    data.particles_03um = pms.n0p3;
-    data.particles_05um = pms.n0p5;
-    data.particles_10um = pms.n1p0;
-    data.particles_25um = pms.n2p5;
-    data.particles_50um = pms.n5p0;
-    data.particles_100um = pms.n10p0;
+    data.particles_03um = pms.n0p3 + (pn03Offset / 100);
+    data.particles_05um = pms.n0p5 + (pn05Offset / 100);
+    data.particles_10um = pms.n1p0 + (pn10Offset / 100);
+    data.particles_25um = pms.n2p5 + (pn25Offset / 100);
+    data.particles_50um = pms.n5p0 + (pn50Offset / 100);
+    data.particles_100um = pms.n10p0 + (pn100Offset / 100);
   }
   else
   { // something went wrong
@@ -1345,7 +1393,7 @@ bool checkForUpdate(String &firmware_url)
 {
   heartBeat();
 
-  Serial.println("Making GET request securely...");
+  Serial.println("Making GSM GET request securely...");
   GSMclient.get(version_url);
   int status_code = GSMclient.responseStatusCode();
   delay(1000);
@@ -1389,7 +1437,7 @@ void performOTA(const char *firmware_url)
   heartBeat();
 
   // Initialize HTTP
-  Serial.println("Making GET request securely...");
+  Serial.println("Making GSM GET firmware OTA request securely...");
   GSMclient.get(firmware_url);
   int status_code = GSMclient.responseStatusCode();
   delay(1000);
@@ -1506,6 +1554,134 @@ void GSM_OTA()
   if (checkForUpdate(firmware_url))
   {
     performOTA(firmware_url.c_str());
+  }
+}
+
+bool WiFicheckForUpdate(String &firmware_url)
+{
+  heartBeat();
+  Serial.println("Making WiFi GET request securely...");
+
+  HTTPClient http;
+  http.begin(version_url_WiFiOTA);
+  int httpCode = http.GET();
+
+  if (httpCode == HTTP_CODE_OK)
+  {
+    new_version = http.getString();
+    new_version.trim();
+
+    Serial.print("Response: ");
+    Serial.println(new_version);
+    Serial.println("Current version: " + current_version);
+    Serial.println("Available version: " + new_version);
+
+    if (new_version != current_version)
+    {
+      Serial.println("New version available. Updating...");
+      firmware_url = String("https://raw.githubusercontent.com/prakit340/GreenIO-OTA/main/ota/product/qualcomm/airmass25/firmware_v") + new_version + ".bin";
+      Serial.println("Firmware URL: " + firmware_url);
+      return true;
+    }
+    else
+    {
+      Serial.println("Already on the latest version");
+    }
+  }
+  else
+  {
+    Serial.println("Failed to check for update, HTTP code: " + String(httpCode));
+  }
+
+  http.end();
+  return false;
+}
+
+void WiFiperformOTA(const char *firmware_url)
+{
+  heartBeat();
+
+  // Initialize HTTP
+  Serial.println("Making WiFi GET fiemware OTA request securely...");
+
+  HTTPClient http;
+
+  http.begin(firmware_url);
+  int httpCode = http.GET();
+
+  if (httpCode == HTTP_CODE_OK)
+  {
+    int contentLength = http.getSize();
+    bool canBegin = Update.begin(contentLength);
+    long contentlength_real = contentLength;
+
+    Serial.print("Contentlength: ");
+    Serial.println(contentLength);
+
+    if (canBegin)
+    {
+      heartBeat();
+
+      Serial.println("WiFi OTA Updating..");
+      String OtaStat = "WiFi OTA Updating...";
+      otaStat.createSprite(220, 40);
+      otaStat.fillSprite(TFT_DARKCYAN);
+      otaStat.setFreeFont(FS9);
+      otaStat.setTextColor(TFT_YELLOW);
+      otaStat.setTextSize(1);
+      otaStat.drawString(OtaStat, 5, 5);
+      otaStat.pushSprite(160, 5);
+
+      size_t written = Update.writeStream(http.getStream());
+
+      if (written == contentLength)
+      {
+        Serial.println("Written : " + String(written) + " successfully");
+      }
+      else
+      {
+        Serial.println("Written only : " + String(written) + "/" + String(contentLength) + ". Retry?");
+      }
+
+      if (Update.end())
+      {
+        Serial.println("OTA done!");
+        if (Update.isFinished())
+        {
+          Serial.println("Update successfully completed. Rebooting.");
+          delay(300);
+          ESP.restart();
+        }
+        else
+        {
+          Serial.println("Update not finished? Something went wrong!");
+        }
+      }
+      else
+      {
+        Serial.println("Error Occurred. Error #: " + String(Update.getError()));
+      }
+    }
+    else
+    {
+      Serial.println("Not enough space to begin OTA");
+    }
+  }
+  else
+  {
+    Serial.println("Cannot download firmware. HTTP code: " + String(httpCode));
+  }
+
+  http.end();
+}
+
+void WiFi_OTA()
+{
+  Serial.println("---- WiFi OTA Check version before update ----");
+
+  if (WiFicheckForUpdate(firmware_url))
+  {
+    WiFiperformOTA(firmware_url.c_str());
   }
 }
 
@@ -1697,6 +1873,8 @@ void setup()
 
     client.setServer(thingsboardServer, PORT);
     reconnectWiFiMqtt();
+
+    WiFi_OTA();
   }
   else
   {
@@ -1723,13 +1901,20 @@ void setup()
 
   tft.fillScreen(TFT_BLACK); // Clear screen
 
-  tft.fillRect(5, 240, tft.width() - 15, 5, tft.color24to16(0x82c442));   // Print the test text in the custom font
-  tft.fillRect(80, 240, tft.width() - 15, 5, tft.color24to16(0xfaf05d));  // Print the test text in the custom font
-  tft.fillRect(155, 240, tft.width() - 15, 5, tft.color24to16(0xed872d)); // Print the test text in the custom font
-  tft.fillRect(235, 240, tft.width() - 15, 5, tft.color24to16(0xeb3220)); // Print the test text in the custom font
-  tft.fillRect(315, 240, tft.width() - 15, 5, tft.color24to16(0x874596)); // Print the test text in the custom font
-  tft.fillRect(395, 240, tft.width() - 15, 5, tft.color24to16(0x74091e)); // Print the test text in the custom font
-  tft.fillRect(475, 240, tft.width() - 15, 5, TFT_BLACK);                 // Print the test text in the custom font
+  // tft.fillRect(5, 240, tft.width() - 15, 5, tft.color24to16(0x82c442));   // Print the test text in the custom font
+  // tft.fillRect(80, 240, tft.width() - 15, 5, tft.color24to16(0xfaf05d));  // Print the test text in the custom font
+  // tft.fillRect(155, 240, tft.width() - 15, 5, tft.color24to16(0xed872d)); // Print the test text in the custom font
+  // tft.fillRect(235, 240, tft.width() - 15, 5, tft.color24to16(0xeb3220)); // Print the test text in the custom font
+  // tft.fillRect(315, 240, tft.width() - 15, 5, tft.color24to16(0x874596)); // Print the test text in the custom font
+  // tft.fillRect(395, 240, tft.width() - 15, 5, tft.color24to16(0x74091e)); // Print the test text in the custom font
+  // tft.fillRect(475, 240, tft.width() - 15, 5, TFT_BLACK);                 // Print the test text in the custom font
+
+  tft.fillRect(5, 225, tft.width() - 15, 5, tft.color24to16(0x00b0f1));   // Print the test text in the custom font
+  tft.fillRect(80, 225, tft.width() - 15, 5, tft.color24to16(0x01b050));  // Print the test text in the custom font
+  tft.fillRect(155, 225, tft.width() - 15, 5, tft.color24to16(0xffff00)); // Print the test text in the custom font
+  tft.fillRect(235, 225, tft.width() - 15, 5, tft.color24to16(0xf56e0c)); // Print the test text in the custom font
+  tft.fillRect(315, 225, tft.width() - 15, 5, tft.color24to16(0xfd0100)); // Print the test text in the custom font
+  tft.fillRect(475, 225, tft.width() - 15, 5, TFT_BLACK);                 // Print the test text in the custom font
 
   t1CallGetProbe();
   t2CallShowEnv();
@@ -1758,8 +1943,17 @@ void loop()
       if (t - lastReconnectAttempt >= 30)
       {
         lastReconnectAttempt = t;
+
+        if (CountPing >= pingCount)
+        {
+          CountPing = 0;
+          ESP.restart();
+        }
+        CountPing++;
+
         if (reconnectWiFiMqtt())
         {
+          CountPing = 0;
           lastReconnectAttempt = 0;
         }
       }
@@ -1812,8 +2006,17 @@ void loop()
       if (t - lastReconnectAttempt >= 30)
       {
         lastReconnectAttempt = t;
+
+        if (CountPing >= pingCount)
+        {
+          CountPing = 0;
+          ESP.restart();
+        }
+        CountPing++;
+
         if (reconnectGSMMqtt())
         {
+          CountPing = 0;
           lastReconnectAttempt = 0;
         }
       }
@@ -1855,12 +2058,13 @@ void loop()
   if ((currentMillis - previous_t5) >= 300)
   {
     previous_t5 = millis() / 1000;
-    // OTA_git_CALL();
 
-    if(connectWifi)
+    if (connectWifi)
     {
-
-    }else{
+      // WiFi_OTA();
+    }
+    else
+    {
       GSM_OTA();
     }
   }
