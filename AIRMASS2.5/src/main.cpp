@@ -49,8 +49,8 @@ EEPROMClass eCO2BASELINE("eeprom2");
 // #define _TASK_TIMECRITICAL
 
 #define ProjectName "AIRMASS 2.5 Inspector"
-#define FirmwareVersion "0.0.6"
-String current_version = "0.0.6";
+#define FirmwareVersion "1.0.0"
+String current_version = "1.0.0";
 
 const char *passAP = "greenio7650";
 
