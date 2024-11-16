@@ -314,7 +314,7 @@ void splash()
   tft.setTextDatum(BR_DATUM);
   tft.setFreeFont(FF1);
   tft.setTextColor(tft.color24to16(0x000000));
-  String verPro = " v." + FirmwareVer;
+  String verPro = " v" + FirmwareVer;
   tft.drawString(verPro, 475, 320, GFXFF);
 
   NCCID = deviceToken.c_str();
