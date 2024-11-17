@@ -160,6 +160,7 @@ void readEEPROM()
 
 void setup()
 {
+  Serial.begin(115200);
   writeEEPROM();
   delay(1000);
   readEEPROM();
